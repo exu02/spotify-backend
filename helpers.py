@@ -3,7 +3,7 @@ import spotipy
 import spotipy.util as util
 import numpy as np
 import pandas as pd
-from sklearn.metrics import euclidean_distances
+from sklearn.metrics.pairwise import cosine_distances
 
 def auth():
     client_id = get_key(find_dotenv(), 'CLIENT_ID')
@@ -16,16 +16,16 @@ def auth():
     return set_key(find_dotenv(), 'CURR_USER_TOKEN', token)
 
 def computeCentroid(selected_tracks: list, audio_feats: pd.DataFrame):
-    track_ids = pd.Index([tr['track']['id'] for tr in selected_tracks])
-    selected_audio_feats = audio_feats.loc[track_ids]
-    centroid = selected_audio_feats.drop(['track_id'],axis=1).mean(axis=0)
+    sel_track_ids = pd.Index([tr['id'] for tr in selected_tracks])
+    selected_audio_feats = audio_feats.loc[sel_track_ids]
+    centroid = selected_audio_feats.mean(axis=0)
 
     return centroid
 
 def computeDistances(audio_feats: pd.DataFrame, centroid: pd.DataFrame):
-    dists = euclidean_distances(audio_feats, [centroid])
-    distDf = pd.DataFrame(dists, columns=["distance"])
-    distDf['track_id'] = audio_feats.index.copy()
+    sims = 1 - cosine_distances(audio_feats, [centroid])/2
+    simDf = pd.DataFrame(sims, columns=["similarity"]).round(3)
+    simDf['id'] = audio_feats.index.copy()
     
-    return distDf
+    return simDf
 

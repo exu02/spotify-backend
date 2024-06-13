@@ -11,7 +11,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 app = Flask(__name__)
-cors = CORS(app)
+cors = CORS(app, origins=['http://localhost:4200'])
 app.config['CORS_HEADERS'] = 'Content_Type'
 client_id = get_key(find_dotenv(), 'CLIENT_ID')
 client_secret = get_key(find_dotenv(), 'CLIENT_SECRET')
@@ -20,8 +20,6 @@ sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 scaler = StandardScaler()
 feature_names = ['danceability', 'energy', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']
-audio_feats_std = pd.DataFrame()
-track_df = pd.DataFrame()
 
 @app.route('/')
 def home():
@@ -45,9 +43,6 @@ def getPlaylists():
 @app.route('/api/getTracksFromPlaylist', methods=['POST'])
 @cross_origin()
 def getTracksFromPlaylist():
-    global track_df
-    global audio_feats_std
-
     playlist_id = request.get_json()['playlist_id']
     tracks = sp.playlist_items(playlist_id, fields='items(track(id, name, artists(name, id), album(name, id, images)))')['items']
     tracks = [tr['track'] for tr in tracks]
@@ -58,36 +53,38 @@ def getTracksFromPlaylist():
         columns=audio_feats.columns
     )
     audio_feats_std.index = track_df['id']
-    audio_feats_std.index.name = 'track_id'
+    audio_feats_std.index.name = 'id'
     track_df = track_df.merge(
         right=audio_feats_std,
         how='inner',
         left_on='id',
         right_index=True
     )
-    track_df['distance'] = track_df.index.copy()
+    track_df['similarity'] = track_df.index.copy()
     return track_df.to_dict('records')
 
 @app.route('/api/analyzePlaylist', methods=['POST'])
 @cross_origin()
 def analyzePlaylist():
-    global track_df
-
-    track_df = track_df.drop('distance', axis=1)
-    selected_tracks = request.get_json()
+    track_data = request.get_json()
+    selected_tracks = track_data['selected_tracks']
+    pl_tracks = track_data['playlist_tracks']
+    track_df = pd.DataFrame(pl_tracks).drop('similarity', axis=1)
+    track_df.index = track_df['id']
+    track_df = track_df.drop('id', axis=1)
     centroid = computeCentroid(
         selected_tracks=selected_tracks,
-        audio_feats=audio_feats_std
+        audio_feats=track_df[feature_names]
     )
-    dists = computeDistances(
-        audio_feats=audio_feats_std,
+    simDf = computeDistances(
+        audio_feats=track_df[feature_names],
         centroid=centroid
     )
     track_df = track_df.merge(
-        dists,
+        simDf,
         how='inner',
         left_on='id',
-        right_on='track_id'
+        right_on='id'
     )
 
     return track_df.to_dict('records')
